@@ -11,44 +11,42 @@ Cypress.Commands.add('configureAxe', (configurationOptions = {}) => {
   })
 })
 
-Cypress.Commands.add('checkA11y', (context, options, violationCallback) => {
-  cy.window({ log: false })
-    .then(win => {
-      if (isEmptyObjectorNull(context)) context = undefined
-      if (isEmptyObjectorNull(options)) options = undefined
-      if (isEmptyObjectorNull(violationCallback)) violationCallback = undefined
-      return win.axe.run(
-        context ? (context = context) : (context = win.document),
-        options
-      )
-    })
-    .then(({ violations }) => {
-      if (violations.length) {
-        if (violationCallback) violationCallback(violations)
-        cy.wrap(violations, { log: false }).each(v => {
-          Cypress.log({
-            name: 'a11y error!',
-            consoleProps: () => v,
-            message: `${v.id} on ${v.nodes.length} Node${
-              v.nodes.length === 1 ? '' : 's'
-            }`
-          })
+Cypress.Commands.add('checkA11y', (
+  context=undefined, 
+  options=undefined, 
+  violationCallback=undefined, 
+  filter=['minor', 'moderate', 'serious', 'critical']
+) => {
+  cy.window({log: false}).then(win => {
+    return win.axe.run(
+      (!context)?win.document:context,
+      options
+    )
+  }).then(({violations}) => {
+    cy.wrap(0, {log: false}).as('violationCounter')
+    if (violations.length) {
+      if (violationCallback) {violationCallback(violations)}
+      cy.wrap(violations, {log: false}).each(v => {
+        cy.wrap(v.nodes, {log: false}).each(node => {
+          if(filter.includes(v.impact)) {
+            cy.get(node.target[0], {log: false}).then(element => element.css('border', '1px solid magenta'))
+            cy.log('**Accessibility violation:**')
+            cy.log(`* Rule-ID: ${v.id}`)
+            cy.log(`* Impact: ${v.impact}`)
+            cy.log(`* Description: ${v.description}`)
+            cy.log(`* Help: [${v.help}](${v.helpUrl})`)
+            cy.log(`* WCAG tags: ${v.tags.join(', ')}`)
+            cy.get('@violationCounter', {log: false}).then(counter => {return counter+1}).as('violationCounter')
+          }
         })
-      }
-      return cy.wrap(violations, { log: false })
-    })
-    .then(violations => {
-      assert.equal(
-        violations.length,
-        0,
-        `${violations.length} accessibility violation${
-          violations.length === 1 ? '' : 's'
-        } ${violations.length === 1 ? 'was' : 'were'} detected`
-      )
-    })
+      })
+    }
+    return cy.get('@violationCounter', {log: false})
+  }).then(violationsCounter => {
+    assert.equal(
+      violationsCounter,
+      0,
+      `Accessibility violation${violationsCounter === 1 ? '' : 's'} detected`
+    )
+  })
 })
-
-function isEmptyObjectorNull(value) {
-  if (value == null) return true
-  return Object.entries(value).length === 0 && value.constructor === Object
-}
